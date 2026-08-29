@@ -2,6 +2,7 @@ class_name InventoryDragManager
 extends RefCounted
 
 const CELL_SIZE: int = 64
+const CLICK_THRESHOLD_MS: int = 200 # Próg czasowy w milisekundach
 
 static var held_item: ItemData = null
 static var hovered_grid_ui: Control = null 
@@ -10,15 +11,17 @@ static var _drag_ghost: Control = null
 static var _ghost_tex_rect: TextureRect = null
 static var _root_viewport: Window = null
 
-# Pamięć stanu do operacji Rollback (CYA)
 static var original_db: InventoryData = null
 static var original_x: int = -1
 static var original_y: int = -1
 static var original_rotated: bool = false
-
 static var drag_offset_grid: Vector2i = Vector2i.ZERO
 
-# Zaktualizowana sygnatura z parametrem 'click_offset'
+# Zmienne Maszyny Stanu
+static var _drag_start_time: int = 0
+static var _is_pick_and_place: bool = false
+static var _was_lmb_pressed: bool = false
+
 static func start_drag(item: ItemData, source_node: Node, db: InventoryData, x: int, y: int, click_offset: Vector2i) -> void:
 	if held_item != null: return
 		
@@ -29,6 +32,11 @@ static func start_drag(item: ItemData, source_node: Node, db: InventoryData, x: 
 	original_rotated = item.rotated
 	drag_offset_grid = click_offset
 	_root_viewport = source_node.get_tree().root
+	
+	# Inicjalizacja zegara (CYA Protocol)
+	_drag_start_time = Time.get_ticks_msec()
+	_is_pick_and_place = false
+	_was_lmb_pressed = true # Podniesienie inicjuje się kliknięciem
 	
 	_drag_ghost = Control.new()
 	_drag_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -45,6 +53,48 @@ static func start_drag(item: ItemData, source_node: Node, db: InventoryData, x: 
 	
 	_rebuild_ghost_transform()
 	_root_viewport.get_tree().process_frame.connect(_update_ghost_position)
+
+static func _update_ghost_position() -> void:
+	if _drag_ghost == null or _root_viewport == null: return
+	
+	var is_lmb_pressed: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var time_held: int = Time.get_ticks_msec() - _drag_start_time
+	
+	# 1. Dekoder Zdarzeń (Edge Detection)
+	if _was_lmb_pressed and not is_lmb_pressed:
+		# PUSZCZENIE przycisku
+		if time_held < CLICK_THRESHOLD_MS:
+			_is_pick_and_place = true
+		else:
+			_execute_drop()
+			return
+			
+	elif not _was_lmb_pressed and is_lmb_pressed:
+		# PONOWNE KLIKNIĘCIE (dla trybu Pick & Place)
+		if _is_pick_and_place:
+			_execute_drop()
+			return
+
+	_was_lmb_pressed = is_lmb_pressed
+	
+	# 2. Aktualizacja Wektora Pozycji
+	var pixel_offset = Vector2(
+		(drag_offset_grid.x * CELL_SIZE) + (CELL_SIZE / 2.0),
+		(drag_offset_grid.y * CELL_SIZE) + (CELL_SIZE / 2.0)
+	)
+	_drag_ghost.global_position = _root_viewport.get_mouse_position() - pixel_offset
+	
+	if hovered_grid_ui != null:
+		update_preview(hovered_grid_ui.get_local_mouse_position())
+
+# Wyizolowany węzeł decyzyjny zrzutu
+static func _execute_drop() -> void:
+	if hovered_grid_ui != null:
+		var success = attempt_drop(hovered_grid_ui.get_local_mouse_position())
+		if not success:
+			revert_drop()
+	else:
+		revert_drop()
 
 static func rotate_held_item() -> void:
 	if held_item == null or _drag_ghost == null: return
@@ -69,19 +119,6 @@ static func _rebuild_ghost_transform() -> void:
 	else:
 		_ghost_tex_rect.rotation = 0.0
 		_ghost_tex_rect.position = Vector2.ZERO
-		
-static func _update_ghost_position() -> void:
-	if _drag_ghost != null and _root_viewport != null:
-		# Przeliczamy offset z indeksów na piksele (+ połowa komórki, by wyśrodkować na kursorze)
-		var pixel_offset = Vector2(
-			(drag_offset_grid.x * CELL_SIZE) + (CELL_SIZE / 2.0),
-			(drag_offset_grid.y * CELL_SIZE) + (CELL_SIZE / 2.0)
-		)
-		_drag_ghost.global_position = _root_viewport.get_mouse_position() - pixel_offset
-		
-		if hovered_grid_ui != null:
-			update_preview(hovered_grid_ui.get_local_mouse_position())
-			
 
 static func set_hovered_grid(grid_ui: Control) -> void:
 	hovered_grid_ui = grid_ui

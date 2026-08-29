@@ -21,12 +21,13 @@ func _ready() -> void:
 	inventory_data.inventory_updated.connect(_on_inventory_updated)
 
 func _gui_input(event: InputEvent) -> void:
-	# Click-to-place: Reagujemy na WCIŚNIĘCIE (pressed == true)
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		if InventoryDragManager.held_item != null and InventoryDragManager.hovered_grid_ui == self:
-			var success = InventoryDragManager.attempt_drop(get_local_mouse_position())
-			if not success:
-				InventoryDragManager.revert_drop()
+	pass
+	## Click-to-place: Reagujemy na WCIŚNIĘCIE (pressed == true)
+	#if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		#if InventoryDragManager.held_item != null and InventoryDragManager.hovered_grid_ui == self:
+			#var success = InventoryDragManager.attempt_drop(get_local_mouse_position())
+			#if not success:
+				#InventoryDragManager.revert_drop()
 
 func _on_mouse_entered() -> void:
 	InventoryDragManager.set_hovered_grid(self)
@@ -105,10 +106,6 @@ func _input(event: InputEvent) -> void:
 			InventoryDragManager.rotate_held_item()
 		elif InventoryDragManager.hovered_grid_ui == self:
 			_attempt_hover_rotation()
-			
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		if InventoryDragManager.held_item != null and InventoryDragManager.hovered_grid_ui == null:
-			InventoryDragManager.revert_drop()
 
 func _attempt_hover_rotation() -> void:
 	var local_pos = get_local_mouse_position()
