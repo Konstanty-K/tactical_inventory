@@ -1,16 +1,31 @@
-# res://addons/tactical_inventory/core/ItemData.gd
-extends Resource
 class_name ItemData
+extends Resource
 
-@export var item_id: String = "base_item"
-@export var item_name: String = "Item"
-@export var dimensions: Vector2i = Vector2i(1, 1) # (szerokość, wysokość)
+@export var item_id: String = ""
+@export var item_name: String = "Nieznany Przedmiot"
 @export var texture: Texture2D
+# Wstrzykiwanie komponentów z poziomu Inspektora Godot
+@export var components: Array[ItemComponent] = []
 
 var rotated: bool = false
 
-# Oblicza aktualne wymiary z uwzględnieniem rotacji
+# Wyszukiwanie komponentu w locie
+func get_component(component_class: Script) -> ItemComponent:
+	for comp in components:
+		if comp.get_script() == component_class:
+			return comp
+	return null
+
+# Zaktualizowana funkcja pobierająca wymiary z komponentu, wliczająca rotację
 func get_current_dimensions() -> Vector2i:
+	var shape = get_component(GridShapeComponent) as GridShapeComponent
+	var dims = shape.dimensions if shape != null else Vector2i(1, 1) # Minimalny wymiar to 1x1
+	
 	if rotated:
-		return Vector2i(dimensions.y, dimensions.x)
-	return dimensions
+		return Vector2i(dims.y, dims.x)
+	return dims
+
+# Pobiera surowe wymiary z komponentu (niezbędne do renderowania Wrappera)
+func get_base_dimensions() -> Vector2i:
+	var shape = get_component(GridShapeComponent) as GridShapeComponent
+	return shape.dimensions if shape != null else Vector2i(1, 1)

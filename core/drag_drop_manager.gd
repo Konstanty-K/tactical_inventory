@@ -110,7 +110,7 @@ static func _rebuild_ghost_transform() -> void:
 	var dims = held_item.get_current_dimensions()
 	_drag_ghost.size = Vector2(dims.x * CELL_SIZE, dims.y * CELL_SIZE)
 	
-	var base_dims = held_item.dimensions
+	var base_dims = held_item.get_base_dimensions()
 	_ghost_tex_rect.size = Vector2(base_dims.x * CELL_SIZE, base_dims.y * CELL_SIZE)
 	
 	if held_item.rotated:

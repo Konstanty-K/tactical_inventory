@@ -18,7 +18,8 @@ func init_item(data: ItemData) -> void:
 	_tex_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	_tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
-	var base_dims = item_data.dimensions
+	var base_dims = item_data.get_base_dimensions()
+	
 	_tex_rect.size = Vector2(base_dims.x * CELL_SIZE, base_dims.y * CELL_SIZE)
 	
 	# Transformacja wektorowa dla obróconych obiektów
