@@ -21,9 +21,12 @@ func _ready() -> void:
 	inventory_data.inventory_updated.connect(_on_inventory_updated)
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		if InventoryDragManager.hovered_grid_ui == self:
-			InventoryDragManager.attempt_drop(get_local_mouse_position())
+	# Click-to-place: Reagujemy na WCIŚNIĘCIE (pressed == true)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if InventoryDragManager.held_item != null and InventoryDragManager.hovered_grid_ui == self:
+			var success = InventoryDragManager.attempt_drop(get_local_mouse_position())
+			if not success:
+				InventoryDragManager.revert_drop()
 
 func _on_mouse_entered() -> void:
 	InventoryDragManager.set_hovered_grid(self)
@@ -97,7 +100,31 @@ func _draw() -> void:
 		draw_rect(highlight_rect, color)
 
 func _input(event: InputEvent) -> void:
-	# Nasłuchujemy twardego wciśnięcia klawisza R (bez powtórzeń/echo)
 	if event is InputEventKey and event.keycode == KEY_R and event.pressed and not event.echo:
 		if InventoryDragManager.held_item != null:
 			InventoryDragManager.rotate_held_item()
+		elif InventoryDragManager.hovered_grid_ui == self:
+			_attempt_hover_rotation()
+			
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if InventoryDragManager.held_item != null and InventoryDragManager.hovered_grid_ui == null:
+			InventoryDragManager.revert_drop()
+
+func _attempt_hover_rotation() -> void:
+	var local_pos = get_local_mouse_position()
+	var grid_x = int(floor(local_pos.x / CELL_SIZE))
+	var grid_y = int(floor(local_pos.y / CELL_SIZE))
+	
+	if not inventory_data.is_in_bounds(grid_x, grid_y): return
+	
+	var target_item = inventory_data.grid[inventory_data.get_index(grid_x, grid_y)]
+	if target_item != null:
+		var success = inventory_data.rotate_item_in_place(target_item)
+		if not success:
+			_flash_item_error(target_item)
+
+func _flash_item_error(item: ItemData) -> void:
+	for child in get_children():
+		if child is ItemUI and child.item_data == item:
+			child.flash_error()
+			break

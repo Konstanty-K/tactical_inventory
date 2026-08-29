@@ -71,3 +71,32 @@ func remove_item(item: ItemData) -> void:
 			grid[i] = null
 			
 	inventory_updated.emit()
+
+
+func get_item_position(item: ItemData) -> Vector2i:
+	for y in range(grid_height):
+		for x in range(grid_width):
+			if grid[get_index(x, y)] == item:
+				return Vector2i(x, y) #top left
+	return Vector2i(-1, -1)
+
+
+func rotate_item_in_place(item: ItemData) -> bool:
+	var pos = get_item_position(item)
+	if pos.x == -1: return false
+	
+	# 1. Usunięcie (zwolnienie blokad)
+	remove_item(item)
+	
+	# 2. Mutacja stanu
+	item.rotated = !item.rotated
+	
+	# 3. Weryfikacja
+	if can_place_item(item, pos.x, pos.y):
+		place_item(item, pos.x, pos.y)
+		return true
+		
+	# 4. Rollback (brak miejsca)
+	item.rotated = !item.rotated
+	place_item(item, pos.x, pos.y)
+	return false
