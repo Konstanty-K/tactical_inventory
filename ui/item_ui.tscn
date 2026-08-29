@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bvml6ahtdyg1j"]
+
+[ext_resource type="Script" uid="uid://clvbk1knicx4c" path="res://addons/tactical_inventory/ui/item_ui.gd" id="1_o8vle"]
+
+[node name="ItemUi" type="TextureRect" unique_id=1406104089]
+script = ExtResource("1_o8vle")
