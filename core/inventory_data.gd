@@ -4,17 +4,29 @@ class_name InventoryData
 
 signal inventory_updated # UI nasłuchuje tego sygnału, by się przerysować
 
-@export var grid_width: int = 10
-@export var grid_height: int = 10
+@export var grid_width: int = 10:
+	set(value):
+		grid_width = max(1, value)
+		_rebuild_grid()
+
+@export var grid_height: int = 10:
+	set(value):
+		grid_height = max(1, value)
+		_rebuild_grid()
 
 # Tablica przetrzymująca stan siatki. Rozmiar: grid_width * grid_height
 # Puste pole = null. Zajęte pole = referencja do obiektu ItemData.
 var grid: Array[ItemData] = []
 
 func _init() -> void:
-	# Wypełniamy siatkę wartościami null (pusta siatka)
-	grid.resize(grid_width * grid_height)
-	grid.fill(null)
+	_rebuild_grid()
+
+# Hard reset tablicy przy każdej zmianie rozmiaru
+func _rebuild_grid() -> void:
+	var expected_size = grid_width * grid_height
+	if grid.size() != expected_size:
+		grid.resize(expected_size)
+		grid.fill(null)
 
 # Mapuje współrzędne X,Y na indeks tablicy 1D
 func get_index(x: int, y: int) -> int:
@@ -100,3 +112,58 @@ func rotate_item_in_place(item: ItemData) -> bool:
 	item.rotated = !item.rotated
 	place_item(item, pos.x, pos.y)
 	return false
+
+##==============================================================================
+# Heurystyczny algorytm Auto-Sort (wymagany m.in. dla botów i optymalizacji gracza)
+func sort_inventory() -> void:
+	# 1. Zbieramy unikalne obiekty z przestrzeni
+	var items: Array[ItemData] = []
+	for item in grid:
+		if item != null and not items.has(item):
+			items.append(item)
+			
+	# 2. Twardy reset matrycy (zwalniamy pamięć alokacji)
+	grid.fill(null)
+	
+	# 3. Sortowanie: Najcięższe przestrzennie (pole powierzchni) na początek
+	items.sort_custom(func(a: ItemData, b: ItemData):
+		var area_a = a.get_base_dimensions().x * a.get_base_dimensions().y
+		var area_b = b.get_base_dimensions().x * b.get_base_dimensions().y
+		return area_a > area_b
+	)
+	
+	# 4. Kaskadowa alokacja
+	for item in items:
+		item.rotated = false # Resetujemy rotację dla czystego wyniku
+		var success = add_item_auto(item)
+		if not success:
+			# Tu w przyszłości wywołasz sygnał "World Drop" jeśli kompresja wyrzuci błąd
+			printerr("Krytyczny błąd alokacji: Brak miejsca na " + item.item_name)
+			
+	inventory_updated.emit()
+
+# Funkcja bezpiecznego "Zrzutu" w dowolne wolne miejsce
+func add_item_auto(item: ItemData) -> bool:
+	var pos = _find_first_free_spot(item)
+	if pos.x != -1:
+		return place_item(item, pos.x, pos.y)
+		
+	# Protokół awaryjny: Próba obrotu o 90 stopni, jeśli natywny kształt nie wchodzi
+	item.rotated = not item.rotated
+	pos = _find_first_free_spot(item)
+	if pos.x != -1:
+		return place_item(item, pos.x, pos.y)
+		
+	# Rollback rotacji w przypadku absolutnego braku miejsca
+	item.rotated = not item.rotated
+	return false
+
+# Ślepe skanowanie siatki (O(N))
+func _find_first_free_spot(item: ItemData) -> Vector2i:
+	var dims = item.get_current_dimensions()
+	# Optymalizacja wektora Y/X: Pętla nie skanuje krawędzi, gdzie bryła od razu by wystawała
+	for y in range(grid_height - dims.y + 1):
+		for x in range(grid_width - dims.x + 1):
+			if can_place_item(item, x, y):
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
