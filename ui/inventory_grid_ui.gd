@@ -1,6 +1,8 @@
 class_name InventoryGridUI
 extends Control
 
+signal item_ui_created(item_ui_node: Control, item_data: ItemData)
+
 const CELL_SIZE: int = 64
 @export var inventory_data: InventoryData
 @export var item_ui_scene: PackedScene
@@ -76,6 +78,8 @@ func _spawn_item_ui(item: ItemData, grid_x: int, grid_y: int) -> void:
 	add_child(item_node)
 	item_node.init_item(item)
 	item_node.position = Vector2(grid_x * CELL_SIZE, grid_y * CELL_SIZE)
+	
+	item_ui_created.emit(item_node, item)
 
 func _draw() -> void:
 	if cell_background != null:
