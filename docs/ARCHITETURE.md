@@ -1,26 +1,36 @@
-# Architektura Systemu Ekwipunku (Wersja 2.0)
+# Tactical Inventory Architecture (Component-Based)
 
-## 1. Topologia Przestrzeni (Węzły Alokacji)
-System porzuca monolityczną siatkę. Wprowadzamy dwa rygorystycznie wykluczające się typy przestrzeni (XOR):
-*   **Grid Inventory (Siatka 2D):** Kwantyzacja przestrzeni oparta na współrzędnych X,Y. Determinuje kolizje geometryczne.
-*   **Equipment Slot (Gniazdo Ekwipunku):** Przestrzeń bezwymiarowa. Ignoruje Bounding Box (`dimensions`). Akceptuje wyłącznie obiekt, którego typ (ItemType) zgadza się z wymaganą maską bitową gniazda. Wymusza przeliczanie statystyk postaci.
+## 1. Scope and Boundaries (Separation of Concerns)
+This addon is strictly a **low-level UI API and spatial mathematics engine**.
+* **What it does:** Manages 2D grid arrays (Bounding Box collision), Drag & Drop state machines, spatial queries, and data compression (Stack merging).
+* **What it DOES NOT do:** It does not define game mechanics (e.g., HP, durability, armor classes, game rules), inputs (like pressing 'I' to open), or item spawning.
+The host game uses this addon as modular "Lego bricks" to construct its own specific HUD and logic.
 
-## 2. Typowanie i Dziedziczenie Przedmiotów
-Aby obsłużyć filtrowanie i restrykcje, Model `ItemData` przechodzi w system klasowy.
-*   **Kategoryzacja:** Enumeryczne flagi bitowe (np. `WEAPON_PRIMARY`, `ARMOR_HEAD`, `CONSUMABLE`, `CONTAINER`).
-*   **Dynamiczna Waga:** Wartość skalarna aktualizowana rekurencyjnie, sumująca wagę własną przedmiotu z masą jego wewnętrznego inwentarza.
-*   **Zarządzanie Stosem (Stacking):** Obiekty wymieniają właściwość boolowską "unikalności" na liczbową pojemność maksymalną. Silnik musi rozróżniać próbę upuszczenia (Drop) od próby fuzji (Merge).
+## 2. Data Engineering (Composition over Inheritance)
+The system strictly rejects OOP inheritance trees in favor of an Entity-Component-System (ECS) paradigm.
+* **`ItemData` (Resource):** A purely "dumb" data bus. It stores only basic metadata (ID, Name, Texture) and an array of `ItemComponent` resources.
+* **Components:** Behavior is injected via modular components (e.g., `GridShapeComponent` for dimensions, `StackComponent` for quantities).
+* **Agnosticism:** Domain-specific modules (like `HealthComponent`) are created in the host game and injected into `ItemData`. The addon ignores them unless strictly required for uniqueness checks during merging.
 
-## 3. Zagnieżdżanie i Integralność Danych (Rekurencja)
-Przedmiot może posiadać własną instancję `InventoryData` (np. kamizelka taktyczna, plecak).
-*   **Problem "Bag of Holding" (Wąskie Gardło):** Włożenie plecaka A do plecaka A zniszczy pamięć w nieskończonej pętli. System zrzutu musi implementować weryfikację drzewa za pomocą Skierowanego Grafu Acyklicznego (DAG). Przedmiot odrzuca zrzut, jeśli identyfikator docelowej bazy znajduje się w łańcuchu jego potomków.
-*   **Filtry Warstwy Danych:** Kontener nadrzędny może zablokować przyjmowanie określonych pod-typów (np. apteczka przyjmuje tylko medykamenty).
+## 3. Spatial Topology (Allocation Nodes)
+The system defines two mutually exclusive spatial paradigms (XOR):
+* **Grid Inventory (2D Space):** Quantized spatial allocation based on X,Y coordinates. Determines geometric collisions using `GridShapeComponent`.
+* **Equipment Slot (Dimensionless):** Ignores physical dimensions completely. Accepts an item strictly if its properties match the slot's predefined Bitmask filters (e.g., `WEAPON_PRIMARY`, `HEAD_GEAR`). 
 
-## 4. Architektura Interfejsu (Draggable Windows)
-Każdy widok siatki/gniazd jest osadzony w niezależnym module `PanelContainer`.
-*   **Globalny Menedżer Okien:** Rejestruje aktywne panele w stosie Z-Index. Naciśnięcie `ESC` wyzwala twardy sygnał zamknięcia (zrzut z pamięci lub `hide()`) dla panelu o najwyższym priorytecie.
-*   **Reaktywne Filtrowanie:** Szukanie tekstowe lub bitowe nakłada na obiekty `ItemUI` zmianę właściwości `modulate` (wyszarzanie) i wyłącza im `mouse_filter`, bez modyfikowania struktury bazy danych.
+## 4. Recursion & Data Integrity
+Items can contain their own `InventoryData` instances via a `ContainerComponent` (e.g., backpacks, tactical vests).
+* **The "Bag of Holding" Problem (DAG Validation):** Placing Backpack A inside Backpack A causes a recursive memory crash. The drop sequence implements a Directed Acyclic Graph (DAG) validation algorithm. A drop is strictly rejected if the target base ID exists anywhere in the item's descendant chain.
+* **Filter Passing:** Parent containers can enforce strict acceptance filters onto their sub-grids (e.g., a Medkit container only accepting items with a `MEDICAL` bitmask).
 
-## 5. Algorytmika i Zapis (Serialization & Bots)
-*   **Auto-Sort i AI:** Pakowanie ekwipunku to klasyczny "Bin Packing Problem". Zostanie wdrożony algorytm heurystyczny: sortowanie listy przedmiotów po polu powierzchni malejąco, a następnie próba alokacji od indeksu `0,0` do `N,M`. Silnik działa bezgłowo (Headless) dla NPC.
-*   **Stan Trwały (Save):** Rekurencyjna serializacja bazy do formatu JSON. Konwersja wektorów `Vector2i` na jednoznaczne indeksy tablicy ułatwia odbudowę stanu po restarcie gry.
+## 5. External Data Rendering (Event-Driven IoC)
+To maintain the addon's isolation from the host game's logic, it uses the Inversion of Control (IoC) / Pub-Sub pattern for rendering custom data.
+* **Signal Broadcast:** Upon generating a graphical `ItemUI` node, the addon emits a global signal: `item_visuals_requested(item_ui_node, item_data)`.
+* **Host Injection:** The host game listens to this signal. If it detects game-specific components (e.g., 0 HP in a `HealthComponent`), it dynamically injects its own UI nodes (like red damage overlays or HP bars) as children of the `item_ui_node`.
+
+## 6. Interface Architecture (Window Management)
+* **Draggable Panels:** Grid and Slot views are encapsulated in independent `PanelContainer` modules capable of being dragged across the screen.
+* **Z-Index Stack:** A global window manager handles panel focus. Pressing `ESC` emits a hard signal to `hide()` or destroy the panel with the highest Z-Index priority.
+
+## 7. Algorithms & Persistence (Serialization)
+* **Auto-Sort (Bin Packing):** Inventory sorting uses a heuristic algorithm: sorting the item list by bounding box area descending, then attempting allocation from index `[0,0]` to `[N,M]`.
+* **Persistent State:** Recursive JSON serialization of the data layer. Converting `Vector2i` coordinates to flat 1D array indices facilitates deterministic state reconstruction upon loading.
