@@ -192,6 +192,11 @@ static func attempt_drop_grid(local_pos: Vector2) -> bool:
 	
 	var target_db: InventoryData = hovered_grid_ui.get("inventory_data") as InventoryData
 	
+	# BRAMKA 0: CYA Protocol - Blokada Incepcji (Paradoks Pamięci)
+	if _is_target_inside_held_item(target_db, held_item):
+		printerr("DAG Validation Failed: Próba włożenia kontenera we własną zawartość (Incepcja).")
+		return false
+	
 	# 1. BRAMKA: Sprawdzamy czy coś już tu leży (Próba Merge)
 	var index = target_db.get_index(start_x, start_y)
 	if index != -1 and target_db.grid[index] != null:
@@ -323,3 +328,24 @@ static func _destroy_ghost() -> void:
 		_root_viewport.get_tree().process_frame.disconnect(_update_ghost_position)
 		_drag_ghost.queue_free()
 		_drag_ghost = null
+
+# Skonstruowany algorytm detekcji cykli (Circular Reference)
+static func _is_target_inside_held_item(target_db: Resource, current_item: ItemData) -> bool:
+	if current_item == null or target_db == null:
+		return false
+		
+	var container = current_item.get_component(ContainerComponent) as ContainerComponent
+	if container == null or container.inventory == null:
+		return false # Przedmiot nie jest kontenerem, jest bezpieczny
+		
+	# 1. Sprawdzenie płytkie: Czy cel to dokładnie ten kontener?
+	if container.inventory == target_db:
+		return true
+		
+	# 2. Sprawdzenie głębokie (Rekurencja): Skanujemy zawartość tego kontenera
+	for nested_item in container.inventory.grid:
+		if nested_item != null:
+			if _is_target_inside_held_item(target_db, nested_item):
+				return true
+				
+	return false
