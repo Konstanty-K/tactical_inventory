@@ -6,12 +6,13 @@ const CLICK_THRESHOLD_MS: int = 200 # Próg czasowy w milisekundach
 
 static var held_item: ItemData = null
 static var hovered_grid_ui: Control = null 
+static var hovered_slot_ui: Control = null
 
 static var _drag_ghost: Control = null
 static var _ghost_tex_rect: TextureRect = null
 static var _root_viewport: Window = null
 
-static var original_db: InventoryData = null
+static var original_db: Resource = null # Obsługuje InventoryData (Grid) i SlotData (Slot)
 static var original_x: int = -1
 static var original_y: int = -1
 static var original_rotated: bool = false
@@ -22,7 +23,8 @@ static var _drag_start_time: int = 0
 static var _is_pick_and_place: bool = false
 static var _was_lmb_pressed: bool = false
 
-static func start_drag(item: ItemData, source_node: Node, db: InventoryData, x: int, y: int, click_offset: Vector2i) -> void:
+static func start_drag(item: ItemData, source_node: Node, db: Resource, 
+x: int, y: int, click_offset: Vector2i) -> void:
 	if held_item != null: return
 		
 	held_item = item
@@ -89,24 +91,30 @@ static func _update_ghost_position() -> void:
 	)
 	_drag_ghost.global_position = _root_viewport.get_mouse_position() - pixel_offset
 	
+	# Wizualizacja podglądu zrzutu (Tylko dla grida, gniazdo ma stałe położenie)
 	if hovered_grid_ui != null:
 		update_preview(hovered_grid_ui.get_local_mouse_position())
 
-# Wyizolowany węzeł decyzyjny zrzutu
+# Wyizolowany węzeł decyzyjny zrzutu (Polimorficzny - kieruje ruch do Grida lub Slota)
 static func _execute_drop() -> void:
+	var success: bool = false
+	
 	if hovered_grid_ui != null:
-		var success = attempt_drop(hovered_grid_ui.get_local_mouse_position())
-		if not success:
-			# ROZDZIELENIE UX:
-			if _is_pick_and_place:
-				# Przedmiot ZOSTAJE na kursorze. 
-				# TODO: W przyszłości wywołamy tu sygnał pulsowania siatki na czerwono.
-				pass 
-			else:
-				# Zwykłe przeciągnięcie z puszczeniem - wraca na miejsce
-				revert_drop()
-	else:
-		if not _is_pick_and_place:
+		success = attempt_drop_grid(hovered_grid_ui.get_local_mouse_position())
+	elif hovered_slot_ui != null:
+		success = attempt_drop_slot()
+		
+		# CZYSZCZENIE: Zrzucenie na Slot musi wygasić jego zielony/czerwony blask
+		hovered_slot_ui.clear_highlight()
+		
+	if not success:
+		# ROZDZIELENIE UX:
+		if _is_pick_and_place:
+			# Przedmiot ZOSTAJE na kursorze. 
+			# TODO: W przyszłości wywołamy tu sygnał pulsowania siatki/gniazda na czerwono.
+			pass 
+		else:
+			# Zwykłe przeciągnięcie z puszczeniem - wraca na miejsce
 			revert_drop()
 
 static func rotate_held_item() -> void:
@@ -136,6 +144,15 @@ static func _rebuild_ghost_transform() -> void:
 static func set_hovered_grid(grid_ui: Control) -> void:
 	hovered_grid_ui = grid_ui
 
+static func set_hovered_slot(slot_ui: Control) -> void:
+	hovered_slot_ui = slot_ui
+
+static func clear_hovered_slot(slot_ui: Control) -> void:
+	if hovered_slot_ui == slot_ui:
+		hovered_slot_ui = null
+		if slot_ui.has_method("clear_highlight"):
+			slot_ui.clear_highlight()
+
 static func clear_hovered_grid(grid_ui: Control) -> void:
 	if hovered_grid_ui == grid_ui:
 		hovered_grid_ui = null
@@ -144,23 +161,27 @@ static func clear_hovered_grid(grid_ui: Control) -> void:
 
 # Weryfikacja wizualna
 static func update_preview(local_pos: Vector2) -> void:
-	if held_item == null or hovered_grid_ui == null: return
+	if held_item == null: return
 	
-	var mouse_grid_x: int = int(floor(local_pos.x / CELL_SIZE))
-	var mouse_grid_y: int = int(floor(local_pos.y / CELL_SIZE))
-	
-	# Odejmujemy offset kursora, aby uzyskać prawdziwy początek przedmiotu
-	var start_x: int = mouse_grid_x - drag_offset_grid.x
-	var start_y: int = mouse_grid_y - drag_offset_grid.y
-	
-	var target_db: InventoryData = hovered_grid_ui.get("inventory_data") as InventoryData
-	if target_db == null: return
-	
-	var is_valid: bool = target_db.can_place_item(held_item, start_x, start_y)
-	hovered_grid_ui.draw_highlight(start_x, start_y, held_item.get_current_dimensions(), is_valid)
+	if hovered_grid_ui != null:
+		var mouse_grid_x: int = int(floor(local_pos.x / CELL_SIZE))
+		var mouse_grid_y: int = int(floor(local_pos.y / CELL_SIZE))
+		var start_x: int = mouse_grid_x - drag_offset_grid.x
+		var start_y: int = mouse_grid_y - drag_offset_grid.y
+		
+		var target_db: InventoryData = hovered_grid_ui.get("inventory_data") as InventoryData
+		if target_db != null:
+			var is_valid: bool = target_db.can_place_item(held_item, start_x, start_y)
+			hovered_grid_ui.draw_highlight(start_x, start_y, held_item.get_current_dimensions(), is_valid)
+			
+	elif hovered_slot_ui != null:
+		var target_db: SlotData = hovered_slot_ui.get("slot_data") as SlotData
+		if target_db != null:
+			var is_valid: bool = target_db.can_accept_item(held_item)
+			hovered_slot_ui.draw_highlight(is_valid)
 
-# Operacja zapisu
-static func attempt_drop(local_pos: Vector2) -> bool:
+# Operacja zapisu dla SIATKI (Grid)
+static func attempt_drop_grid(local_pos: Vector2) -> bool:
 	if held_item == null or hovered_grid_ui == null: return false
 		
 	var mouse_grid_x: int = int(floor(local_pos.x / CELL_SIZE))
@@ -210,29 +231,86 @@ static func attempt_drop(local_pos: Vector2) -> bool:
 		
 	return false
 
-static func revert_drop() -> void:
-	if held_item == null or original_db == null: return
+# Operacja zapisu dla GNIAZDA (Slot)
+static func attempt_drop_slot() -> bool:
+	if held_item == null or hovered_slot_ui == null: return false
 	
-	held_item.rotated = original_rotated
+	var target_db: SlotData = hovered_slot_ui.get("slot_data") as SlotData
+	if target_db == null: return false
 	
-	# 1. Próba włożenia z powrotem (zadziała przy normalnym podniesieniu)
-	if not original_db.place_item(held_item, original_x, original_y):
-		
-		# 2. Protokół Ratunkowy (zadziała przy anulowaniu Podziału/Split)
-		var index = original_db.get_index(original_x, original_y)
-		var target_item = original_db.grid[index]
-		
-		if target_item != null and target_item.item_name == held_item.item_name:
+	# BRAMKA 1: Gniazdo jest zajęte (Próba Merge)
+	if target_db.held_item != null:
+		var target_item = target_db.held_item
+		if target_item.item_name == held_item.item_name:
 			var t_stack = target_item.get_component(StackComponent) as StackComponent
 			var h_stack = held_item.get_component(StackComponent) as StackComponent
 			
 			if t_stack != null and h_stack != null:
-				t_stack.add_amount(h_stack.current_stack)
-				original_db.inventory_updated.emit()
-		else:
-			# Gdy na miejsce oryginału gracz zdążył już włożyć coś innego (World Drop trigger)
-			printerr("Krytyczny błąd Revert: Miejsce zajęte. Utrata danych (wymagany World Drop).")
+				var overflow = t_stack.add_amount(h_stack.current_stack)
+				target_db.slot_updated.emit()
+				
+				if overflow <= 0:
+					_destroy_ghost()
+					held_item = null
+					return true
+				else:
+					h_stack.current_stack = overflow
+					return false
+					
+		printerr("Zamiana (Swap) w gnieździe na razie nieobsługiwana.")
+		return false
+
+	# BRAMKA 2: Puste Gniazdo (Funkcja w klasie sama sprawdzi filtr Bitmaski!)
+	if target_db.place_item(held_item):
+		_destroy_ghost()
+		held_item = null
+		return true
+		
+	return false
+
+# Rozszerzony Protokół Ratunkowy (Polimorficzny powrót do źródła)
+static func revert_drop() -> void:
+	if held_item == null or original_db == null: return
+	
+	held_item.rotated = original_rotated
+	var revert_success: bool = false
+	
+	# BRAMKA 1: Powrót do Siatki (Grid)
+	if original_db is InventoryData:
+		var grid_db = original_db as InventoryData
+		if not grid_db.place_item(held_item, original_x, original_y):
+			# Protokół Ratunkowy po podziale (Split/Merge)
+			var index = grid_db.get_index(original_x, original_y)
+			var target_item = grid_db.grid[index]
 			
+			if target_item != null and target_item.item_name == held_item.item_name:
+				var t_stack = target_item.get_component(StackComponent) as StackComponent
+				var h_stack = held_item.get_component(StackComponent) as StackComponent
+				if t_stack != null and h_stack != null:
+					t_stack.add_amount(h_stack.current_stack)
+					grid_db.inventory_updated.emit()
+					revert_success = true
+		else:
+			revert_success = true
+			
+	# BRAMKA 2: Powrót do Gniazda (Slot)
+	elif original_db is SlotData:
+		var slot_db = original_db as SlotData
+		if not slot_db.place_item(held_item):
+			# Protokół Ratunkowy w slocie
+			if slot_db.held_item != null and slot_db.held_item.item_name == held_item.item_name:
+				var t_stack = slot_db.held_item.get_component(StackComponent) as StackComponent
+				var h_stack = held_item.get_component(StackComponent) as StackComponent
+				if t_stack != null and h_stack != null:
+					t_stack.add_amount(h_stack.current_stack)
+					slot_db.slot_updated.emit()
+					revert_success = true
+		else:
+			revert_success = true
+			
+	if not revert_success:
+		printerr("Krytyczny błąd Revert: Miejsce zajęte. Utrata danych (wymagany World Drop).")
+		
 	_destroy_ghost()
 	held_item = null
 	original_db = null

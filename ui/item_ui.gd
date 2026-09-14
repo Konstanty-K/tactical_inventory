@@ -73,34 +73,53 @@ func _gui_input(event: InputEvent) -> void:
 			_pick_up(Vector2i(click_offset_x, click_offset_y), is_split)
 
 func _pick_up(offset: Vector2i, is_split: bool = false) -> void:
-	var parent_grid = get_parent() as InventoryGridUI
-	if not parent_grid: return
+	var parent = get_parent()
 	
-	var grid_x = int(position.x / CELL_SIZE)
-	var grid_y = int(position.y / CELL_SIZE)
+	# Zmienne abstrakcyjne dla dowolnego źródła
+	var source_data: Resource = null
+	var start_x: int = 0
+	var start_y: int = 0
+	
+	# BRAMKA 1: Identyfikacja kontenera źródłowego
+	if parent is InventoryGridUI:
+		source_data = parent.inventory_data
+		start_x = int(position.x / CELL_SIZE)
+		start_y = int(position.y / CELL_SIZE)
+	elif parent is SlotUI:
+		source_data = parent.slot_data
+		offset = Vector2i.ZERO # Z gniazda chwytamy zawsze za lewy górny róg
+	else:
+		return # Zabezpieczenie: Nieznany rodzic
 	
 	var stack_comp = item_data.get_component(StackComponent) as StackComponent
 	
-	# BRAMKA: Operacja podziału (Split)
+	# BRAMKA 2: Operacja podziału (Split)
 	if is_split and stack_comp != null and stack_comp.current_stack > 1:
 		var split_amount = int(stack_comp.current_stack / 2.0)
 		stack_comp.current_stack -= split_amount # Odejmujemy połowę z oryginału
 		
-		# Głębokie klonowanie obiektu (duplikuje ItemData oraz wszystkie Komponenty wewnątrz)
+		# Głębokie klonowanie
 		var cloned_item = item_data.duplicate(true) as ItemData
 		var cloned_stack = cloned_item.get_component(StackComponent) as StackComponent
-		cloned_stack.current_stack = split_amount # Klon dostaje odciętą połowę
+		cloned_stack.current_stack = split_amount 
 		
-		# Wymuszamy aktualizację etykiety wizualnej oryginału (który ZOSTANIE na siatce)
-		status_label.text = str(stack_comp.current_stack)
+		# Wizualna aktualizacja oryginału
+		if status_label != null:
+			status_label.text = str(stack_comp.current_stack)
 		
-		# Klon trafia do Menedżera, oryginał nie jest usuwany (brak queue_free)
-		InventoryDragManager.start_drag(cloned_item, self, parent_grid.inventory_data, grid_x, grid_y, offset)
+		# Klon trafia do Menedżera, oryginał zostaje
+		InventoryDragManager.start_drag(cloned_item, self, source_data, start_x, start_y, offset)
 		
-	# BRAMKA: Standardowe podniesienie
+	# BRAMKA 3: Standardowe podniesienie całego przedmiotu
 	else:
-		InventoryDragManager.start_drag(item_data, self, parent_grid.inventory_data, grid_x, grid_y, offset)
-		parent_grid.inventory_data.remove_item(item_data)
+		InventoryDragManager.start_drag(item_data, self, source_data, start_x, start_y, offset)
+		
+		# Wywołujemy odpowiednią metodę usuwania z danych w zależności od typu rodzica
+		if parent is InventoryGridUI:
+			parent.inventory_data.remove_item(item_data)
+		elif parent is SlotUI:
+			parent.slot_data.remove_item()
+			
 		queue_free()
 
 func flash_error() -> void:

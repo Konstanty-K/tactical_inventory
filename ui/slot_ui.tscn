@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://be4kx1s3ww1i7"]
+
+[ext_resource type="Script" uid="uid://cl2xm11ejh3c0" path="res://addons/tactical_inventory/core/slot_data.gd" id="1_ij143"]
+
+[node name="SlotUi" type="Node2D" unique_id=89872817]
+script = ExtResource("1_ij143")
+accepted_categories = 24
